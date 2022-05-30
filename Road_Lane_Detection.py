@@ -8,6 +8,10 @@ import numpy as np
 import imutils
 import time
 from stackImages.stackImages import stackImages
+import warnings
+
+cache_left = []
+cache_right = []
 
 
 def empty(a):
@@ -27,6 +31,9 @@ def find_coordinates(frame, lines_params):
 
 
 def average_slope(frame, lines):
+    warnings.warn("deprecated", DeprecationWarning)
+    global cache_left
+    global cache_right
     left_fit = []
     right_fit = []
 
@@ -41,23 +48,31 @@ def average_slope(frame, lines):
         else:
             right_fit.append((slope, intercept))
 
-    left_fit_avg = np.average(left_fit, axis=0)
-    right_fit_avg = np.average(right_fit, axis=0)
-
     try:
+        left_fit_avg = np.average(left_fit, axis=0)
+        right_fit_avg = np.average(right_fit, axis=0)
+
+        left_line = find_coordinates(frame, left_fit_avg)
+        right_line = find_coordinates(frame, right_fit_avg)
+
+        cache_left = left_fit
+        cache_right = right_fit
+        return np.array([left_line, right_line])
+    except TypeError:
+        left_fit_avg = np.average(cache_left, axis=0)
+        right_fit_avg = np.average(cache_right, axis=0)
+
         left_line = find_coordinates(frame, left_fit_avg)
         right_line = find_coordinates(frame, right_fit_avg)
 
         return np.array([left_line, right_line])
-    except TypeError:
-        pass
-
 
 
 def main():
     video = cv2.VideoCapture(args["video"])
     count = 0
     last_time = time.time()
+    global refPts1
     while True:
         ret, frame = video.read()
         duration = time.time() - last_time
@@ -78,43 +93,44 @@ def main():
 
             #appy canny edge detection
             edged = cv2.Canny(gray, thresh1, thresh2)
-            kernel = np.ones((5, 5))
-            imgDil = cv2.dilate(edged, kernel, iterations=1)
-            kernel = np.ones((3, 3))
-            imgErode = cv2.erode(imgDil, kernel, iterations=1)
+            # kernel = np.ones((5, 5))
+            # imgDil = cv2.dilate(edged, kernel, iterations=1)
+            # kernel = np.ones((3, 3))
+            # imgErode = cv2.erode(imgDil, kernel, iterations=1)
 
             #crop region of interest
             h, w = frame.shape[:2]
-            triangle = np.array([(50, h), (700, h), (550, 250)])
-            mask = np.zeros_like(imgErode)
+            triangle = np.array([(100, h), (700, h), (450, 250)])
+            mask = np.zeros_like(edged)
             cv2.fillConvexPoly(mask, triangle, (255, 255,255), cv2.LINE_AA)
-            roi = cv2.bitwise_and(imgErode, imgErode, mask=mask)
+            roi = cv2.bitwise_and(edged, edged, mask=mask)
 
             #apply Hough transform
             houghThresh = cv2.getTrackbarPos("Hough", "Threshold Value")
             minLength = cv2.getTrackbarPos("Min Length", "Threshold Value")
             maxGap = cv2.getTrackbarPos("Max Gap", "Threshold Value")
-            lines = cv2.HoughLinesP(roi, 1, np.pi/180, houghThresh, minLineLength=minLength, maxLineGap=maxGap)
+            lines = cv2.HoughLinesP(roi, 2, np.pi/180, houghThresh, minLineLength=minLength, maxLineGap=maxGap)
             result = frame.copy()
+            result_avg = frame.copy()
+
             if lines is not None:
-                # for line in lines:
-                #     x1, y1, x2, y2 = line[0]
-                #     cv2.line(result, (x1, y1), (x2, y2), (0, 0, 255), 5)
+                #draw all lines detected
+                for line in lines:
+                    x1, y1, x2, y2 = line[0]
+                    cv2.line(result, (x1, y1), (x2, y2), (255, 0, 0), 3)
 
-                try:
-                    avg_lines = average_slope(result, lines)
-                    left_line = avg_lines[0]
-                    right_line = avg_lines[1]
-                    cv2.line(result, (left_line[0], left_line[1]), (left_line[2], left_line[3]), (0, 0, 255), 5, cv2.LINE_AA)
-                    cv2.line(result, (right_line[0], right_line[1]), (right_line[2], right_line[3]), (0, 0, 255), 5, cv2.LINE_AA)
-                except TypeError:
-                    pass
-
+                #draw average lines
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    avg_lines = average_slope(result_avg, lines)
+                left_line = avg_lines[0]
+                right_line = avg_lines[1]
+                cv2.line(result_avg, (left_line[0], left_line[1]), (left_line[2], left_line[3]), (0, 0, 255), 5, cv2.LINE_AA)
+                cv2.line(result_avg, (right_line[0], right_line[1]), (right_line[2], right_line[3]), (0, 0, 255), 5, cv2.LINE_AA)
 
             #display
-            stacked = stackImages(0.5, ([frame, edged, roi], [imgDil, imgErode, result]))
+            stacked = stackImages(0.5, ([frame, gray, edged], [roi, result, result_avg]))
             cv2.imshow("Frames", stacked)
-
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -139,8 +155,8 @@ cv2.createTrackbar("VAL MAX", "HSV", 255, 255, empty)
 #create a threshold value window and trackbars
 cv2.namedWindow("Threshold Value")
 cv2.resizeWindow("Threshold Value", 640, 240)
-cv2.createTrackbar("Threshold1", "Threshold Value", 30, 255, empty)
-cv2.createTrackbar("Threshold2", "Threshold Value", 128, 255, empty)
+cv2.createTrackbar("Threshold1", "Threshold Value", 50, 255, empty)
+cv2.createTrackbar("Threshold2", "Threshold Value", 150, 255, empty)
 cv2.createTrackbar("Hough", "Threshold Value", 54, 1000, empty)
 cv2.createTrackbar("Min Length", "Threshold Value", 0, 500, empty)
 cv2.createTrackbar("Max Gap", "Threshold Value", 10, 500, empty)
