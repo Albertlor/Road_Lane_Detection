@@ -1,6 +1,8 @@
 #python Road_Lane_Detection.py -v video/road.mp4
+#python Road_Lane_Detection.py -v video/road1.mp4
 #python Road_Lane_Detection.py -i image/road.jpg
 #python Road_Lane_Detection.py -v Udacity_Advanced_Lane_Line_Detection_P4/project_video.mp4
+
 
 import argparse
 import cv2
@@ -51,9 +53,9 @@ def main():
             thresh1, thresh2 = thresh
             edged = utils.canny(frame, thresh1, thresh2)
 
-            #STEP 2, Crop region of interest
+            ###STEP 2, Crop region of interest
             h, w = frame.shape[:2]
-            triangle = np.array([(100, h), (700, h), (450, 250)])
+            triangle = np.array([(300, 300), (0, h), (w, h)])
             mask = np.zeros_like(edged)
             cv2.fillConvexPoly(mask, triangle, (255, 255, 255), cv2.LINE_AA)
             roi = cv2.bitwise_and(edged, edged, mask=mask)
@@ -63,30 +65,27 @@ def main():
             roi_copy = roi.copy()
             points = utils.val_pointsToWarp()
             M, warped = utils.warpImg(roi_copy, points, w, h)
-            warpedPoints = utils.drawWarpedPoints(roi_copy, points)
+            roi_copy2 = roi.copy()
+            roi_copy2 = cv2.cvtColor(roi_copy2, cv2.COLOR_GRAY2BGR)
+            warpedPoints = utils.drawWarpedPoints(roi_copy2, points)
 
-            ###STEP 4, Detection lines using Hough transform
-            final = frame.copy()
-            final_avg = frame.copy()
+            ##STEP 4, Detection lines using Hough transform
+            warped_copy = warped.copy()
+            warped_copy = cv2.cvtColor(warped_copy, cv2.COLOR_GRAY2BGR)
             houghThresh, maxLineGap, minLineLength = utils.val_houghThresh()
-            lines = cv2.HoughLinesP(roi, 1, np.pi / 180, houghThresh, minLineLength=minLineLength,maxLineGap=maxLineGap)
+            lines = cv2.HoughLinesP(warped, 1, np.pi / 180, houghThresh, minLineLength=minLineLength, maxLineGap=maxLineGap)
             if lines is not None:
                 for line in lines:
                     x1, y1, x2, y2 = line[0]
-                    cv2.line(final, (x1, y1), (x2, y2), (255, 0, 0), 5)
+                    cv2.line(warped_copy, (x1, y1), (x2, y2), (255, 0, 0), 5)
 
-                #draw average lines
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    avg_lines = utils.average_slope(final_avg, lines)
-                left_line = avg_lines[0]
-                right_line = avg_lines[1]
-                cv2.line(final_avg, (left_line[0], left_line[1]), (left_line[2], left_line[3]), (0, 0, 255), 5, cv2.LINE_AA)
-                cv2.line(final_avg, (right_line[0], right_line[1]), (right_line[2], right_line[3]), (0, 0, 255), 5, cv2.LINE_AA)
+            ###STEP 7, Reverse the bird-eye view
+            invM, restored = utils.restoreImg(warped_copy, points, w, h)
+            final = cv2.addWeighted(frame, 0.6, restored, 1, 0)
 
             #display
-            stacked = utils.stackImages(0.5, ([frame, roi, warped], [warpedPoints, final_avg, final]))
-            cv2.imshow("Frames", stacked)
+            screen = utils.stackImages(0.5, ([frame, edged, roi], [warpedPoints, warped, final]))
+            cv2.imshow("Frames", screen)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
