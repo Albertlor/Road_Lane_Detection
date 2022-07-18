@@ -9,7 +9,6 @@ import cv2
 import numpy as np
 import imutils
 import time
-import warnings
 import utils
 
 cache_left = []
@@ -47,6 +46,8 @@ def main():
         if ret:
             frame = imutils.resize(frame, width=800, inter=cv2.INTER_LINEAR)
             cv2.putText(frame, "fps: " + fps, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 1, cv2.LINE_AA)
+
+            blank = np.zeros_like(frame)
 
             ###STEP 1, Edge detection
             thresh = utils.val_CannyThresh()
